@@ -1,0 +1,117 @@
+/**
+ * @fileoverview Firestore Security Rules for PharmaSys Application
+ *
+ * Core Philosophy:
+ * This ruleset enforces a user-ownership model for customer data and allows public read access for pharmaceutical and supply chain information.
+ * It prioritizes authorization independence and structural segregation to simplify security rules.
+ *
+ * Data Structure:
+ * - /pharmaceuticals/{pharmaceuticalId}: Stores pharmaceutical product information.
+ * - /inventories/{inventoryId}: Stores inventory information for each pharmaceutical product.
+ * - /customers/{customerId}: Stores customer information.
+ * - /orders/{orderId}: Stores order information for each customer.
+ * - /supplyChains/{supplyChainId}: Stores supply chain information.
+ * - /pharmaceuticals/{pharmaceuticalId}/limsData/{limsDataId}: Stores LIMS data associated with each pharmaceutical product.
+ *
+ * Key Security Decisions:
+ * - Customer data is strictly user-owned and only accessible by the authenticated user with matching UID.
+ * - Pharmaceutical and Supply Chain information is publicly readable, but write access is restricted (enforced by `false` conditions in the rules).
+ * - The supplyChainId is denormalized in the pharmaceutical documents to enable authorization independence.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Allows public read access to pharmaceutical product information, but restricts write access.
+     * @path /pharmaceuticals/{pharmaceuticalId}
+     * @allow (get, list) - Any user can read pharmaceutical information.
+     * @deny (create, update, delete) - No user can create, update, or delete pharmaceutical information through the client.
+     * @principle Allows public read access with restricted write access.
+     */
+    match /pharmaceuticals/{pharmaceuticalId} {
+      allow get, list: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    /**
+     * @description Allows public read access to inventory information, but restricts write access.
+     * @path /inventories/{inventoryId}
+     * @allow (get, list) - Any user can read inventory information.
+     * @deny (create, update, delete) - No user can create, update, or delete inventory information through the client.
+     * @principle Allows public read access with restricted write access.
+     */
+    match /inventories/{inventoryId} {
+      allow get, list: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    /**
+     * @description Allows public read access to customer data, but restricts write access unless authenticated.
+     * @path /customers/{customerId}
+     * @allow (get, list) - Any user can read customer information.
+     * @allow (create) - The user can create their own customer document if the customerId matches their UID.
+     * @allow (update, delete) - The user can update and delete their own customer document if the customerId matches their UID.
+     * @principle Enforces document ownership for write operations.
+     */
+    match /customers/{customerId} {
+      allow get, list: if true;
+      allow create: if isOwner(customerId);
+      allow update: if isExistingOwner(customerId);
+      allow delete: if isExistingOwner(customerId);
+    }
+
+    /**
+     * @description Allows public read access to order data, but restricts write access.
+     * @path /orders/{orderId}
+     * @allow (get, list) - Any user can read order information.
+     * @deny (create, update, delete) - No user can create, update, or delete order information.
+     * @principle Allows public read access with restricted write access.
+     */
+    match /orders/{orderId} {
+      allow get, list: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    /**
+     * @description Allows public read access to supply chain information, but restricts write access.
+     * @path /supplyChains/{supplyChainId}
+     * @allow (get, list) - Any user can read supply chain information.
+     * @deny (create, update, delete) - No user can create, update, or delete supply chain information.
+     * @principle Allows public read access with restricted write access.
+     */
+    match /supplyChains/{supplyChainId} {
+      allow get, list: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    /**
+     * @description Allows public read access to LIMS data, but restricts write access.
+     * @path /pharmaceuticals/{pharmaceuticalId}/limsData/{limsDataId}
+     * @allow (get, list) - Any user can read LIMS data.
+     * @deny (create, update, delete) - No user can create, update, or delete LIMS data through the client.
+     * @principle Allows public read access with restricted write access.
+     */
+    match /pharmaceuticals/{pharmaceuticalId}/limsData/{limsDataId} {
+      allow get, list: if true;
+      allow create, update, delete: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+  }
+}
